@@ -1,67 +1,65 @@
-#include <GL/glut.h> // Inclui a biblioteca GLUT
+#include <GL/glut.h>
 
-// Função que contém o código de desenho
-void desenha(void) {
-    // Limpa a janela de visualização com a cor de fundo definida
+void draw(void) {
+    // Clear the viewport with the defined background color
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // O código da sua imagem começa aqui
-    // Define a espessura da linha
-    glLineWidth(2.0f); // [cite: 370]
+    // Your image code starts here
+    // Set the line width
+    glLineWidth(2.0f);
 
-    // Desenha os eixos X e Y
-    glBegin(GL_LINES); // [cite: 371]
-        glColor3f(1.0f, 1.0f, 0.0f); // Define a cor amarela [cite: 372]
-        // Linha vertical do eixo Y
-        glVertex2i(0, 40);  // [cite: 373]
-        glVertex2i(0, -40); // [cite: 376]
-        // Linha horizontal do eixo X
-        glVertex2i(-40, 0); // [cite: 377]
-        glVertex2i(40, 0);  // [cite: 378]
-    glEnd(); // [cite: 379]
+    // Draw the X and Y axes
+    glBegin(GL_LINES); // 
+        glColor3f(1.0f, 1.0f, 0.0f); // Set the color to yellow 
+        // Vertical line for the Y axis
+        glVertex2i(0, 40);
+        glVertex2i(0, -40); 
+        // Horizontal line for the X axis
+        glVertex2i(-40, 0);
+        glVertex2i(40, 0);
+    glEnd();
 
-    // Desenha o quadrado vermelho
-    glBegin(GL_LINE_LOOP); // GL_LINE_LOOP desenha uma sequência de linhas e fecha o contorno [cite: 380]
-        glColor3f(1.0f, 0.0f, 0.0f); // Define a cor vermelha [cite: 381, 382]
-        glVertex2i(-20, 20); // Vértice superior esquerdo [cite: 383, 384]
-        glVertex2i(-20, -20); // Vértice inferior esquerdo [cite: 385, 386]
-        glVertex2i(20, -20);  // Vértice inferior direito [cite: 387]
-        glVertex2i(20, 20);   // Vértice superior direito [cite: 388]
-    glEnd(); // [cite: 389]
+    // Draw the red square
+    glBegin(GL_LINE_LOOP); // GL_LINE_LOOP draws a sequence of lines and closes the loop 
+        glColor3f(1.0f, 0.0f, 0.0f);
+        glVertex2i(-20, 20); // Top-left vertex 
+        glVertex2i(-20, -20); // Bottom-left vertex 
+        glVertex2i(20, -20);  // Bottom-right vertex 
+        glVertex2i(20, 20);   // Top-right vertex 
+    glEnd();
 
-    // Garante que os comandos de desenho sejam executados
+    // Ensure the drawing commands are executed
     glFlush();
 }
 
-// Função de inicialização de parâmetros
-void inicializa(void) {
-    // Define a cor de fundo da janela (preto)
+void initialize(void) {
+    // Set the window background color (black)
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-    // Define o sistema de coordenadas que será usado na janela (SRU)
-    // Os eixos X e Y irão de -40 a +40
-    gluOrtho2D(-40.0f, 40.0f, -40.0f, 40.0f); // [cite: 369]
+    // Define the coordinate system to be used in the window (WCS)
+    // The X and Y axes will range from -40 to +40
+    gluOrtho2D(-40.0f, 40.0f, -40.0f, 40.0f); // 
 }
 
-// Função principal
+// Main function
 int main(int argc, char** argv) {
-    glutInit(&argc, argv); // Inicializa a GLUT
-    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB); // Define o modo de display (buffer único, cores RGB)
+    glutInit(&argc, argv); // Initialize GLUT
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB); // Set the display mode (single buffer, RGB colors)
     
-    // Define a posição e o tamanho da janela na tela (SRT)
-    glutInitWindowPosition(100, 100); // [cite: 368]
-    glutInitWindowSize(400, 400);     // [cite: 368]
+    // Set the window position and size on the screen (DCS)
+    glutInitWindowPosition(100, 100); // 
+    glutInitWindowSize(400, 400);     // 
 
-    // Cria a janela com o título especificado
-    glutCreateWindow("Exemplo 02 - Eixos e Quadrado");
+    // Create the window with the specified title
+    glutCreateWindow("Example 02 - Axes and Square");
 
-    // Registra a função de desenho para ser chamada quando a janela precisar ser redesenhada
-    glutDisplayFunc(desenha);
+    // Register the draw function to be called when the window needs to be redrawn
+    glutDisplayFunc(draw);
 
-    // Registra a função de inicialização
-    inicializa();
+    // Register the initialization function
+    initialize();
 
-    // Inicia o loop de processamento de eventos da GLUT
+    // Start the GLUT event processing loop
     glutMainLoop();
 
     return 0;
