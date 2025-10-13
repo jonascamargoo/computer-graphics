@@ -14,14 +14,18 @@
 bool isPaused = false;
 float planetAngle = 0.0f;
 int orbitCount = 0;
-const float ORBIT_SPEED = 0.01f;
+float orbitSpeed = 0.01f;
+
+float planetRotationAngle = 0.0f;
+int rotationCount = 0;
+float rotationSpeed = 0.05f;
 
 // Controle do cenário
 bool showStars = true;
 bool isCircularOrbit = false;
 const int NUM_STARS = 200;
 std::vector<std::pair<float, float>> stars;
-int starTimer = 0; // Temporizador para atualizar as estrelas
+int starTimer = 0;
 
 // Controle da visualização (Zoom)
 float zoomFactor = 1.0f;
@@ -72,7 +76,7 @@ void display() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // 1. Desenhar Estrelas
+    // Desenhar Estrelas
     if (showStars) {
         glColor3f(1.0f, 1.0f, 1.0f); // Estrelas brancas
         glPointSize(1.5f);
@@ -83,7 +87,7 @@ void display() {
         glEnd();
     }
 
-    // 2. Desenhar a Órbita
+    // Desenhar a Órbita
     glColor3f(1.0f, 1.0f, 1.0f); // Órbita branca
     glLineWidth(1.0f);
     glBegin(GL_LINE_LOOP);
@@ -101,11 +105,10 @@ void display() {
     }
     glEnd();
     
-    // 3. Desenhar o Sol
-    glColor3f(1.0f, 1.0f, 0.0f); // Sol amarelo
+    // Desenhar o Sol
+    glColor3f(1.0f, 1.0f, 0.0f);
     drawCircle(30.0f, 100);
 
-    // 4. Calcular e Desenhar o Planeta
     float planetX, planetY;
     if (isCircularOrbit) {
         planetX = cos(planetAngle) * CIRCLE_R;
@@ -115,17 +118,38 @@ void display() {
         planetY = sin(planetAngle) * ELLIPSE_RY;
     }
 
-    glPushMatrix(); // Salva a matriz de transformação atual [cite: 1969]
+    glPushMatrix();
     glTranslatef(planetX, planetY, 0.0f); // Aplica translação ao planeta
+    glRotatef(planetRotationAngle * 180.0 / M_PI, 0.0f, 0.0f, 1.0f); // Aplica rotação ao planeta
+
+    // Desenha o Planeta
     glColor3f(0.0f, 0.0f, 1.0f); // Planeta azul
     drawCircle(10.0f, 50);
-    glPopMatrix(); // Restaura a matriz de transformação [cite: 1970]
 
-    // 5. Desenhar o Texto do Contador
+    // Desenha as Luas
+    // Lua 1 (Polo Superior)
+    glPushMatrix();
+    glTranslatef(0.0f, 15.0f, 0.0f); // Posição relativa ao planeta
+    glColor3f(0.8f, 0.8f, 0.8f); // Lua cinza
+    drawCircle(3.0f, 30);
+    glPopMatrix();
+
+    // Lua 2 (Polo Inferior)
+    glPushMatrix();
+    glTranslatef(0.0f, -15.0f, 0.0f); // Posição relativa ao planeta
+    glColor3f(0.8f, 0.8f, 0.8f); // Lua cinza
+    drawCircle(3.0f, 30);
+    glPopMatrix();
+
+    glPopMatrix();
+
+    // 5. Desenhar o Texto dos Contadores
     glColor3f(1.0f, 0.0f, 0.0f); // Texto vermelho
-    std::string text = "Translacao orbital: " + std::to_string(orbitCount);
-    // Posiciona o texto no canto inferior esquerdo da área de visualização
-    drawText(-240.0 * zoomFactor, -230.0 * zoomFactor, text);
+    std::string orbitText = "Translacao orbital: " + std::to_string(orbitCount);
+    drawText(-240.0 * zoomFactor, -230.0 * zoomFactor, orbitText);
+
+    std::string rotationText = "Rotacao: " + std::to_string(rotationCount);
+    drawText(-240.0 * zoomFactor, -210.0 * zoomFactor, rotationText);
 
     // Exibe a mensagem de Pause
     if (isPaused) {
@@ -133,16 +157,29 @@ void display() {
         drawText(-30.0 * zoomFactor, 220.0 * zoomFactor, "*** Pause ***");
     }
 
-    glutSwapBuffers(); // Troca os buffers para uma animação suave 
+    glutSwapBuffers(); // Troca os buffers para uma animação suave
 }
 
 void update(int value) {
     if (!isPaused) {
         // Atualiza o ângulo do planeta
-        planetAngle += ORBIT_SPEED;
-        if (planetAngle > 2.0 * M_PI) {
+        planetAngle += orbitSpeed;
+        if (orbitSpeed > 0 && planetAngle > 2.0 * M_PI) {
             planetAngle -= 2.0 * M_PI;
             orbitCount++;
+        } else if (orbitSpeed < 0 && planetAngle < -2.0 * M_PI) {
+            planetAngle += 2.0 * M_PI;
+            orbitCount--;
+        }
+
+        // Atualiza a rotação do planeta
+        planetRotationAngle += rotationSpeed;
+        if (rotationSpeed > 0 && planetRotationAngle > 2.0 * M_PI) {
+            planetRotationAngle -= 2.0 * M_PI;
+            rotationCount++;
+        } else if (rotationSpeed < 0 && planetRotationAngle < -2.0 * M_PI) {
+            planetRotationAngle += 2.0 * M_PI;
+            rotationCount--;
         }
 
         // Atualiza as estrelas a cada 100 frames (aproximadamente)
@@ -153,8 +190,8 @@ void update(int value) {
         }
     }
     
-    glutPostRedisplay(); // Solicita o redesenho da tela
-    glutTimerFunc(16, update, 0); // Agenda a próxima atualização (aprox. 60 FPS)
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
 }
 
 
@@ -172,7 +209,12 @@ void keyboard(unsigned char key, int x, int y) {
         case 'T':
             isCircularOrbit = !isCircularOrbit;
             break;
-        case 27: // Tecla ESC para sair
+        case 'i':
+        case 'I':
+            orbitSpeed = -orbitSpeed;
+            rotationSpeed = -rotationSpeed;
+            break;
+        case 27:
             exit(0);
             break;
     }
@@ -181,9 +223,9 @@ void keyboard(unsigned char key, int x, int y) {
 
 void mouse(int button, int state, int x, int y) {
     if (state == GLUT_DOWN) {
-        if (button == GLUT_LEFT_BUTTON) { // Zoom In
+        if (button == GLUT_LEFT_BUTTON) {
             zoomFactor *= 0.9f;
-        } else if (button == GLUT_RIGHT_BUTTON) { // Zoom Out
+        } else if (button == GLUT_RIGHT_BUTTON) {
             zoomFactor *= 1.1f;
         }
     }
@@ -197,7 +239,7 @@ void initialize() {
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB); // Habilita double buffering [cite: 1380]
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(800, 800);
     glutInitWindowPosition(100, 100);
     glutCreateWindow("Exercicio Avaliativo 02 - Sistema Solar");
@@ -208,7 +250,7 @@ int main(int argc, char** argv) {
     glutDisplayFunc(display);
     glutKeyboardFunc(keyboard);
     glutMouseFunc(mouse);
-    glutTimerFunc(16, update, 0); // Inicia o loop de animação
+    glutTimerFunc(16, update, 0);
 
     glutMainLoop();
     return 0;
