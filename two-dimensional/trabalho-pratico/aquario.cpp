@@ -1,40 +1,37 @@
 /*
  * TRABALHO PRÁTICO I - COMPUTAÇÃO GRÁFICA
  *
- * TEMA: Jogo de Sinuca 2D (Física)
+ * TEMA: Jogo de Sinuca 2D vs. Computador (IA com Animação)
  *
  * DESCRIÇÃO:
- * Este projeto simula um jogo de sinuca 2D.
- * - 16 bolas (1 branca, 15 coloridas) são desenhadas na mesa.
- * - O usuário controla a bola branca usando o mouse.
- * - A física de colisão (bola-bola e bola-borda) é simulada.
- * - As bolas perdem velocidade gradualmente devido ao atrito.
- * - Bolas que caem nas caçapas são removidas.
+ * Simula um jogo de sinuca 2D 1 vs. 1 contra um oponente de IA.
+ * - O jogador e a IA jogam em turnos.
+ * - A física de colisão (bola-bola, bola-borda) e atrito é simulada.
+ * - A IA calcula a melhor tacada e executa uma ANIMAÇÃO de mira e tacada,
+ * similar à do jogador.
  *
- * CONTROLES:
- * - Mover o Mouse: Mira o taco (aponta o mouse para a bola branca).
- * - Clicar e Arrastar (Botão Esquerdo): Puxa o taco para trás para definir a força.
- * - Soltar (Botão Esquerdo): Dá a tacada.
- * - Teclado 'r' ou 'R': Reinicia o jogo (arruma as bolas).
+ * CONTROLES (Jogador):
+ * - Mover o Mouse: Mira o taco.
+ * - Clicar e Arrastar (Botão Esquerdo): Puxa o taco para definir a força.
+ * - Soltar (Botão Esquerdo): Dá a tacada (apenas no seu turno).
+ * - Teclado 'r' ou 'R': Reinicia o jogo.
  *
  * CONCEITOS APLICADOS (Baseado nas Práticas):
  * - Primitivas Gráficas (GL_POLYGON para bolas e mesa)
  * - Animação Contínua (glutTimerFunc, GLUT_DOUBLE)
  * - Interação (glutMouseFunc, glutPassiveMotionFunc, glutMotionFunc)
  * - Mapeamento SRT -> SRU (Conversão de coordenadas do mouse)
- * - Transformações Geométricas 2D:
- * - glTranslatef (Posicionamento e movimento das bolas)
- * - glRotatef (Rotação do taco)
- * - Lógica de Simulação (Física de colisão, atrito)
+ * - Transformações Geométricas 2D (glTranslatef, glRotatef)
+ * - Lógica de Simulação (Física de colisão, IA, Sistema de Turnos, Máquina de Estados)
  * - Exibição de Texto (glutBitmapCharacter)
  */
 
- 
 #include <GL/glut.h>
 #include <cmath>
-#include <vector>    // Usado para armazenar as bolas e caçapas
+#include <vector>
 #include <string>
 #include <cstdio>    // Para sprintf
+#include <ctime>     // Para srand(time(NULL))
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -42,13 +39,11 @@
 
 // --- 1. Definições, Estruturas e Constantes ---
 
-// Ajuda a facilitar a matemática de física
+// Estrutura para matemática de vetores 2D
 struct Vetor2D {
     float x, y;
-
     Vetor2D(float x_ = 0.0f, float y_ = 0.0f) : x(x_), y(y_) {}
 
-    // Operações de vetor
     Vetor2D operator+(const Vetor2D& v) const { return Vetor2D(x + v.x, y + v.y); }
     Vetor2D operator-(const Vetor2D& v) const { return Vetor2D(x - v.x, y - v.y); }
     Vetor2D operator*(float s) const { return Vetor2D(x * s, y * s); }
@@ -81,42 +76,59 @@ struct Cacapa {
 const int NUM_BOLAS = 16;
 const float RAIO_BOLA = 2.5f;
 const float RAIO_CACAPA = 4.5f;
-const float ATRITO = 0.995f; // Fator de desaceleração
-const float FATOR_FORCA_TACADA = 0.15f;
-const float RESTITUICAO_BORDA = 0.8f; // Quão "elástica" é a borda
+const float ATRITO = 0.995f; 
+const float FATOR_FORCA_TACADA_JOGADOR = 0.15f;
+const float FATOR_FORCA_TACADA_IA = 0.12f; 
+const float RESTITUICAO_BORDA = 0.8f;
 
 // Dimensões do Mundo (SRU)
 const float MESA_LARGURA = 100.0f;
 const float MESA_ALTURA = 50.0f;
+const float MUNDO_BORDA = 10.0f; 
+
+// Estados de Jogo e IA
+enum Turno { JOGADOR, COMPUTADOR };
+enum EstadoIA { IA_PENSANDO, IA_MIRANDO, IA_PUXANDO, IA_ATIRANDO };
 
 // --- 2. Variáveis Globais ---
 
 // Janela
 int gLarguraTela = 1200;
-int gAlturaTela = 650; // Proporção 2:1 da mesa + bordas
+int gAlturaTela = 650; 
+float gProporcaoMundo = 1.0f;
 
 // Atores
 std::vector<Bola> gBolas;
 std::vector<Cacapa> gCacapas;
 
 // Estado de Jogo
+Turno gTurnoAtual = JOGADOR;
 bool gEstaMirando = false;
 bool gBolasEmMovimento = false;
-Vetor2D gPosMouseSRU;  // Posição do mouse no universo
-Vetor2D gPosCliqueTaco; // Onde o usuário começou a arrastar
+Vetor2D gPosMouseSRU;  
+Vetor2D gPosCliqueTaco;
 float gForcaTacada = 0.0f;
-int gPontuacao = 0;
+int gPontuacaoJogador = 0;
+int gPontuacaoIA = 0;
 char gMensagemStatus[100];
+
+// Estado da Animação da IA
+EstadoIA gEstadoIATurno = IA_PENSANDO;
+int gIATimer = 0; 
+Vetor2D gIADirTacada;    
+float   gIAAnguloAlvo = 0.0f; 
+float   gIAForcaAlvo = 0.0f;  
+float   gIATacoAngulo = 0.0f; 
+float   gIATacoForca = 0.0f;  
 
 // --- 3. Funções de Desenho ---
 
 /**
  * Desenha um texto na tela usando glutBitmapCharacter.
- * A posição é em coordenadas do universo (SRU).
  */
 void desenhaTexto(const char* texto, float x, float y, float r, float g, float b) {
     glColor3f(r, g, b);
-    glRasterPos2f(x, y); // Posição no SRU
+    glRasterPos2f(x, y); 
     const char* c = texto;
     while (*c) {
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
@@ -126,7 +138,6 @@ void desenhaTexto(const char* texto, float x, float y, float r, float g, float b
 
 /**
  * Desenha um círculo preenchido (baseado no exemplo2.cpp).
- * Usado para as bolas e caçapas.
  */
 void desenhaCirculo(float raio, int lados, GLenum tipo) {
     glBegin(tipo);
@@ -141,22 +152,26 @@ void desenhaCirculo(float raio, int lados, GLenum tipo) {
  * Desenha a mesa de sinuca (bordas, feltro, caçapas).
  */
 void desenhaMesa() {
+    float L = MESA_LARGURA;
+    float A = MESA_ALTURA;
+    float B = MUNDO_BORDA;
+
     // Borda Marrom
     glColor3f(0.3f, 0.15f, 0.05f);
     glBegin(GL_QUADS);
-        glVertex2f(-MESA_LARGURA - 10, -MESA_ALTURA - 10);
-        glVertex2f( MESA_LARGURA + 10, -MESA_ALTURA - 10);
-        glVertex2f( MESA_LARGURA + 10,  MESA_ALTURA + 10);
-        glVertex2f(-MESA_LARGURA - 10,  MESA_ALTURA + 10);
+        glVertex2f(-L - B, -A - B);
+        glVertex2f( L + B, -A - B);
+        glVertex2f( L + B,  A + B);
+        glVertex2f(-L - B,  A + B);
     glEnd();
 
     // Feltro Verde
     glColor3f(0.0f, 0.4f, 0.1f);
     glBegin(GL_QUADS);
-        glVertex2f(-MESA_LARGURA, -MESA_ALTURA);
-        glVertex2f( MESA_LARGURA, -MESA_ALTURA);
-        glVertex2f( MESA_LARGURA,  MESA_ALTURA);
-        glVertex2f(-MESA_LARGURA,  MESA_ALTURA);
+        glVertex2f(-L, -A);
+        glVertex2f( L, -A);
+        glVertex2f( L,  A);
+        glVertex2f(-L,  A);
     glEnd();
 
     // Caçapas (Pretas)
@@ -170,42 +185,47 @@ void desenhaMesa() {
 }
 
 /**
- * Desenha o taco de sinuca se o jogador estiver mirando.
+ * Desenha o taco de sinuca (controlado pelo Jogador OU pela IA).
  */
 void desenhaTaco() {
-    if (!gEstaMirando || gBolasEmMovimento) return;
-
-    // Posição da bola branca
+    float angulo, forca;
     Vetor2D posBolaBranca = gBolas[0].pos;
+    Vetor2D dirOpostaTaco;
 
-    // Vetor do mouse até a bola branca (direção oposta da tacada)
-    Vetor2D dirTaco = posBolaBranca - gPosMouseSRU;
-    
-    // Calcula o ângulo de rotação para o taco
-    float angulo = atan2(dirTaco.y, dirTaco.x) * 180.0f / M_PI;
+    if (gTurnoAtual == JOGADOR && gEstaMirando && !gBolasEmMovimento) {
+        // Lógica do JOGADOR (baseada no mouse)
+        Vetor2D dirTaco = posBolaBranca - gPosMouseSRU; // Direção do mouse para a bola
+        angulo = atan2(dirTaco.y, dirTaco.x) * 180.0f / M_PI;
+        
+        float distPuxada = (gPosMouseSRU - gPosCliqueTaco).magnitude();
+        forca = fmin(distPuxada, 50.0f); 
+        gForcaTacada = forca; 
+        
+        dirOpostaTaco = dirTaco.normalizado() * -1.0f; // Taco aponta na direção oposta
 
-    // Calcula a posição do taco (puxado para trás pela força)
-    float distPuxada = (gPosMouseSRU - gPosCliqueTaco).magnitude();
-    gForcaTacada = fmin(distPuxada, 50.0f); // Limita a força máxima
+    } else if (gTurnoAtual == COMPUTADOR && gEstadoIATurno >= IA_MIRANDO && !gBolasEmMovimento) {
+        // Lógica da IA (baseada nos estados de animação)
+        angulo = gIATacoAngulo; // Usa o ângulo animado
+        forca = gIATacoForca;   // Usa a força/puxada animada
+        dirOpostaTaco = gIADirTacada * -1.0f; // Usa a direção calculada
+    } else {
+        return; // Não desenha o taco
+    }
 
-    // Posição inicial do taco (na borda da bola branca)
-    Vetor2D posTaco = posBolaBranca + dirTaco.normalizado() * (RAIO_BOLA + 2.0f + gForcaTacada);
+    // Posição do taco (puxado para trás pela força)
+    Vetor2D posTaco = posBolaBranca + dirOpostaTaco * (RAIO_BOLA + 2.0f + forca);
 
     glPushMatrix();
-    
-    // 1. Translação: Move para a posição da ponta do taco
     glTranslatef(posTaco.x, posTaco.y, 0.0f);
-    
-    // 2. Rotação: Gira o taco para apontar para a bola branca
     glRotatef(angulo, 0.0f, 0.0f, 1.0f);
 
-    // 3. Desenha o taco (um retângulo longo e fino)
+    // Desenha o taco (um retângulo longo e fino)
     float L = 150.0f; // Comprimento
     float w = 1.0f;   // Largura
     glColor3f(0.8f, 0.7f, 0.5f); // Cor de madeira
     glBegin(GL_QUADS);
         glVertex2f(0, -w);
-        glVertex2f(L, -w * 0.5f); // Afunila
+        glVertex2f(L, -w * 0.5f); 
         glVertex2f(L,  w * 0.5f);
         glVertex2f(0,  w);
     glEnd();
@@ -213,18 +233,20 @@ void desenhaTaco() {
     glPopMatrix();
 }
 
-// --- 4. Funções de Lógica e Animação (Física) ---
+// --- 4. Funções de Lógica e Animação (Física e IA) ---
 
 /**
  * Converte coordenadas da Tela (SRT) para o Universo (SRU).
  */
 void converteMouseParaUniverso(int x_tela, int y_tela, Vetor2D* posUniverso) {
-    float mundoLarguraTotal = (MESA_LARGURA + 10) * 2;
-    float mundoAlturaTotal = (MESA_ALTURA + 10) * 2;
+    float mundoX = (MESA_LARGURA + MUNDO_BORDA) * gProporcaoMundo;
+    float mundoY = MESA_ALTURA + MUNDO_BORDA;
+    if (gProporcaoMundo < 1.0) { 
+        mundoY = (MESA_LARGURA + MUNDO_BORDA) / gProporcaoMundo;
+    }
     
-    posUniverso->x = -mundoLarguraTotal / 2.0f + (x_tela / (float)gLarguraTela) * mundoLarguraTotal;
-    // O eixo Y do mouse (SRT) é invertido em relação ao SRU.
-    posUniverso->y = mundoAlturaTotal / 2.0f - (y_tela / (float)gAlturaTela) * mundoAlturaTotal;
+    posUniverso->x = -mundoX + (x_tela / (float)gLarguraTela) * (mundoX * 2.0f);
+    posUniverso->y =  mundoY - (y_tela / (float)gAlturaTela) * (mundoY * 2.0f);
 }
 
 /**
@@ -234,49 +256,28 @@ void arrumarBolas() {
     gBolas.clear();
     
     // 1. Bola Branca
-    Bola branca;
-    branca.pos = Vetor2D(-MESA_LARGURA / 2.0f, 0.0f);
-    branca.vel = Vetor2D(0, 0);
-    branca.raio = RAIO_BOLA;
-    branca.massa = 1.0f;
-    branca.r = 1.0f; branca.g = 1.0f; branca.b = 1.0f;
-    branca.naMesa = true;
-    branca.id = 0;
-    gBolas.push_back(branca);
+    gBolas.push_back({Vetor2D(-MESA_LARGURA / 2.0f, 0.0f), Vetor2D(0, 0), RAIO_BOLA, 1.0f, 1, 1, 1, true, 0});
 
-    // 2. Bolas Coloridas (Arrumadas em triângulo)
+    // 2. Bolas Coloridas
     Vetor2D posInicialTriangulo(MESA_LARGURA / 3.0f, 0.0f);
     int bolaId = 1;
-    
-    for (int i = 0; i < 5; i++) { // 5 fileiras
+    for (int i = 0; i < 5; i++) { 
         for (int j = 0; j <= i; j++) {
             if (bolaId >= NUM_BOLAS) break;
-            
-            Bola bola;
-            // Posição em "coordenadas" de triângulo, depois escalonada
-            float x = posInicialTriangulo.x + i * (RAIO_BOLA * 2.0f * 0.866f); // 0.866 = cos(30)
+            float x = posInicialTriangulo.x + i * (RAIO_BOLA * 2.0f * 0.866f);
             float y = posInicialTriangulo.y + (j * RAIO_BOLA * 2.0f) - (i * RAIO_BOLA);
-            
-            bola.pos = Vetor2D(x, y);
-            bola.vel = Vetor2D(0, 0);
-            bola.raio = RAIO_BOLA;
-            bola.massa = 1.0f;
-            // Cores aleatórias (exceto branca)
-            bola.r = (rand() % 100) / 100.0f * 0.8f + 0.1f;
-            bola.g = (rand() % 100) / 100.0f * 0.8f + 0.1f;
-            bola.b = (rand() % 100) / 100.0f * 0.8f + 0.1f;
-            bola.naMesa = true;
-            bola.id = bolaId++;
-            gBolas.push_back(bola);
+            gBolas.push_back({Vetor2D(x, y), Vetor2D(0, 0), RAIO_BOLA, 1.0f, 
+                             (float)(rand() % 100) / 100.0f, (float)(rand() % 100) / 100.0f, (float)(rand() % 100) / 100.0f,
+                             true, bolaId++});
         }
     }
+    gBolas[5].r = 0.1f; gBolas[5].g = 0.1f; gBolas[5].b = 0.1f; // Bola 8 preta
     
-    // Coloca a bola 8 (preta) no meio
-    gBolas[5].r = 0.1f; gBolas[5].g = 0.1f; gBolas[5].b = 0.1f;
-    
-    gPontuacao = 0;
+    gPontuacaoJogador = 0;
+    gPontuacaoIA = 0;
     gBolasEmMovimento = false;
-    sprintf(gMensagemStatus, "Mova o mouse para mirar. Arraste para atirar.");
+    gTurnoAtual = JOGADOR;
+    sprintf(gMensagemStatus, "Seu turno. Mire (mouse), puxe (clique) e solte.");
 }
 
 /**
@@ -284,8 +285,8 @@ void arrumarBolas() {
  */
 void inicializaCacapas() {
     gCacapas.clear();
-    float L = MESA_LARGURA;
-    float A = MESA_ALTURA;
+    float L = MESA_LARGURA + 1.0f; 
+    float A = MESA_ALTURA + 1.0f;
     gCacapas.push_back({{ -L, -A }, RAIO_CACAPA});
     gCacapas.push_back({{  L, -A }, RAIO_CACAPA});
     gCacapas.push_back({{ -L,  A }, RAIO_CACAPA});
@@ -295,11 +296,56 @@ void inicializaCacapas() {
 }
 
 /**
- * O coração do jogo: a função de simulação de física.
+ * Lógica de "pensamento" da IA. Calcula a jogada e inicia a animação.
+ */
+void iaPensaJogada() {
+    // 1. Encontrar a bola-alvo (bola de menor ID na mesa)
+    int idAlvo = -1;
+    for (int i = 1; i < gBolas.size(); i++) { // Começa em 1 (pula a branca)
+        if (gBolas[i].naMesa) {
+            idAlvo = i;
+            break;
+        }
+    }
+    if (idAlvo == -1) return; // Fim de jogo
+
+    // 2. Encontrar a caçapa-alvo (mais próxima da bola-alvo)
+    Cacapa cacapaAlvo = gCacapas[0];
+    float menorDist = 9999.0f;
+    for (const auto& cacapa : gCacapas) {
+        float d = (gBolas[idAlvo].pos - cacapa.pos).magnitude();
+        if (d < menorDist) {
+            menorDist = d;
+            cacapaAlvo = cacapa;
+        }
+    }
+
+    // 3. Calcular a "Posição Fantasma" (onde a branca deve bater)
+    Vetor2D dirAlvoCacapa = (cacapaAlvo.pos - gBolas[idAlvo].pos).normalizado();
+    Vetor2D posFantasma = gBolas[idAlvo].pos - dirAlvoCacapa * (RAIO_BOLA * 2.0f);
+
+    // 4. Salvar os resultados para a animação
+    Vetor2D& posBolaBranca = gBolas[0].pos;
+    gIADirTacada = (posFantasma - posBolaBranca).normalizado();
+    gIAForcaAlvo = 45.0f; // IA usa uma força fixa
+    
+    // Calcula o ângulo visual do taco (oposto à direção da tacada)
+    gIAAnguloAlvo = atan2(-gIADirTacada.y, -gIADirTacada.x) * 180.0f / M_PI;
+
+    // 5. Iniciar a Animação
+    gIATacoAngulo = gIAAnguloAlvo + 30.0f; // Começa 30 graus "errado" para animar
+    gIATacoForca = 0.0f;
+    gEstadoIATurno = IA_MIRANDO; // Próximo estado
+    gIATimer = 60; // 1 segundo para mirar
+    sprintf(gMensagemStatus, "IA esta mirando...");
+}
+
+/**
+ * O coração do jogo: a função de simulação de física e turnos.
  */
 void anima(int value) {
     if (gBolasEmMovimento) {
-        gBolasEmMovimento = false; // Assumimos que pararam, até provar o contrário
+        bool algumaBolaSeMove = false;
         
         for (int i = 0; i < gBolas.size(); i++) {
             if (!gBolas[i].naMesa) continue;
@@ -307,31 +353,20 @@ void anima(int value) {
             // 1. Aplicar Atrito
             gBolas[i].vel = gBolas[i].vel * ATRITO;
 
-            // Se a bola parar, zera a velocidade
             if (gBolas[i].vel.magnitude() < 0.01f) {
                 gBolas[i].vel = Vetor2D(0, 0);
             } else {
-                gBolasEmMovimento = true; // Pelo menos uma bola ainda se move
+                algumaBolaSeMove = true;
             }
 
             // 2. Atualizar Posição (Translação)
             gBolas[i].pos = gBolas[i].pos + gBolas[i].vel;
 
-            // 3. Colisão com Bordas (Almofadas)
-            if (gBolas[i].pos.x + RAIO_BOLA > MESA_LARGURA) {
-                gBolas[i].pos.x = MESA_LARGURA - RAIO_BOLA;
-                gBolas[i].vel.x *= -RESTITUICAO_BORDA;
-            } else if (gBolas[i].pos.x - RAIO_BOLA < -MESA_LARGURA) {
-                gBolas[i].pos.x = -MESA_LARGURA + RAIO_BOLA;
-                gBolas[i].vel.x *= -RESTITUICAO_BORDA;
-            }
-            if (gBolas[i].pos.y + RAIO_BOLA > MESA_ALTURA) {
-                gBolas[i].pos.y = MESA_ALTURA - RAIO_BOLA;
-                gBolas[i].vel.y *= -RESTITUICAO_BORDA;
-            } else if (gBolas[i].pos.y - RAIO_BOLA < -MESA_ALTURA) {
-                gBolas[i].pos.y = -MESA_ALTURA + RAIO_BOLA;
-                gBolas[i].vel.y *= -RESTITUICAO_BORDA;
-            }
+            // 3. Colisão com Bordas
+            if (gBolas[i].pos.x + RAIO_BOLA > MESA_LARGURA) gBolas[i].vel.x *= -RESTITUICAO_BORDA;
+            if (gBolas[i].pos.x - RAIO_BOLA < -MESA_LARGURA) gBolas[i].vel.x *= -RESTITUICAO_BORDA;
+            if (gBolas[i].pos.y + RAIO_BOLA > MESA_ALTURA) gBolas[i].vel.y *= -RESTITUICAO_BORDA;
+            if (gBolas[i].pos.y - RAIO_BOLA < -MESA_ALTURA) gBolas[i].vel.y *= -RESTITUICAO_BORDA;
 
             // 4. Colisão com Caçapas
             for (const auto& cacapa : gCacapas) {
@@ -339,60 +374,112 @@ void anima(int value) {
                     gBolas[i].naMesa = false;
                     gBolas[i].vel = Vetor2D(0, 0);
                     if (i != 0) { // Se não for a branca
-                        gPontuacao++;
+                        if (gTurnoAtual == JOGADOR) gPontuacaoJogador++;
+                        else gPontuacaoIA++;
                     } else {
-                        // Bola branca caiu, reseta ela
                         gBolas[i].pos = Vetor2D(-MESA_LARGURA / 2.0f, 0.0f);
                         gBolas[i].naMesa = true;
                     }
                 }
             }
 
-            // 5. Colisão Bola-Bola (Física de Impulso)
+            // 5. Colisão Bola-Bola (Física)
             for (int j = i + 1; j < gBolas.size(); j++) {
                 if (!gBolas[j].naMesa) continue;
-
                 Vetor2D diff = gBolas[i].pos - gBolas[j].pos;
                 float dist = diff.magnitude();
-
                 if (dist < RAIO_BOLA + RAIO_BOLA) {
-                    // Colidiram!
-                    
-                    // a. Corrige superposição (para não grudar)
                     float overlap = (RAIO_BOLA + RAIO_BOLA) - dist;
                     Vetor2D normal = diff.normalizado();
                     gBolas[i].pos = gBolas[i].pos + normal * (overlap / 2.0f);
                     gBolas[j].pos = gBolas[j].pos - normal * (overlap / 2.0f);
-                    
-                    // b. Calcula o impulso (física de colisão elástica 2D)
                     Vetor2D vRel = gBolas[i].vel - gBolas[j].vel;
                     float velAlongNormal = vRel.dot(normal);
-
-                    if (velAlongNormal > 0) continue; // Já estão se afastando
-
+                    if (velAlongNormal > 0) continue; 
                     float impulso = -(1.0f + 1.0f) * velAlongNormal;
                     impulso /= (1.0f / gBolas[i].massa + 1.0f / gBolas[j].massa);
-                    
                     Vetor2D impulsoVec = normal * impulso;
-
-                    // c. Aplica o impulso às velocidades
                     gBolas[i].vel = gBolas[i].vel + impulsoVec * (1.0f / gBolas[i].massa);
                     gBolas[j].vel = gBolas[j].vel - impulsoVec * (1.0f / gBolas[j].massa);
                 }
             }
         }
         
-        // Atualiza mensagem se o jogo parou
+        gBolasEmMovimento = algumaBolaSeMove;
+
+        // Se o movimento ACABOU de parar, troca o turno
         if (!gBolasEmMovimento) {
-             sprintf(gMensagemStatus, "Mova o mouse para mirar. Arraste para atirar.");
+            if (gTurnoAtual == JOGADOR) {
+                gTurnoAtual = COMPUTADOR;
+                gEstadoIATurno = IA_PENSANDO;
+                gIATimer = 120; // 2 segundos para "pensar"
+            } else {
+                gTurnoAtual = JOGADOR;
+            }
+        }
+    } 
+    else {
+        // Bolas PARADAS
+        if (gTurnoAtual == COMPUTADOR) {
+            
+            // --- MÁQUINA DE ESTADOS DA ANIMAÇÃO DA IA ---
+            switch (gEstadoIATurno) {
+                case IA_PENSANDO:
+                    sprintf(gMensagemStatus, "Computador esta pensando... (%d)", gIATimer / 60 + 1);
+                    gIATimer--;
+                    if (gIATimer <= 0) {
+                        iaPensaJogada(); // Pensa e muda o estado para IA_MIRANDO
+                    }
+                    break;
+                    
+                case IA_MIRANDO:
+                    sprintf(gMensagemStatus, "Computador esta mirando...");
+                    gIATimer--;
+                    // Anima o ângulo (interpolação linear simples)
+                    gIATacoAngulo = gIATacoAngulo * 0.95f + gIAAnguloAlvo * 0.05f;
+                    
+                    if (gIATimer <= 0 || std::abs(gIATacoAngulo - gIAAnguloAlvo) < 0.5f) {
+                        gIATacoAngulo = gIAAnguloAlvo; // Trava no alvo
+                        gEstadoIATurno = IA_PUXANDO;
+                        gIATimer = 90; // 1.5s para puxar
+                    }
+                    break;
+                    
+                case IA_PUXANDO:
+                    sprintf(gMensagemStatus, "Computador esta puxando...");
+                    gIATimer--;
+                    // Anima a força (puxada)
+                    gIATacoForca = gIATacoForca * 0.95f + gIAForcaAlvo * 0.05f;
+                    
+                    if (gIATimer <= 0 || std::abs(gIATacoForca - gIAForcaAlvo) < 0.5f) {
+                        gIATacoForca = gIAForcaAlvo; // Trava na força
+                        gEstadoIATurno = IA_ATIRANDO;
+                        gIATimer = 10; // 10 frames para a tacada
+                    }
+                    break;
+                    
+                case IA_ATIRANDO:
+                    sprintf(gMensagemStatus, "Computador ATIRA!");
+                    gIATimer--;
+                    // Anima a tacada (movimento rápido para frente)
+                    gIATacoForca = gIATacoForca * 0.6f; // Move rápido para 0
+                    
+                    if (gIATimer <= 0) {
+                        // APLICA A TACADA
+                        gBolas[0].vel = gIADirTacada * gIAForcaAlvo * FATOR_FORCA_TACADA_IA;
+                        gBolasEmMovimento = true;
+                        gIATacoForca = 0.0f; // Reseta
+                    }
+                    break;
+            }
+        } else {
+             // Turno do Jogador, bolas paradas
+             sprintf(gMensagemStatus, "Seu turno. Mire (mouse) e atire.");
         }
     }
 
-    // Força o redesenho da tela
     glutPostRedisplay();
-    
-    // Reagenda a próxima chamada de animação
-    glutTimerFunc(1000 / 60, anima, 0); // ~60 FPS
+    glutTimerFunc(1000 / 60, anima, 0); 
 }
 
 // --- 5. Callbacks do GLUT ---
@@ -401,45 +488,35 @@ void anima(int value) {
  * Função principal de desenho.
  */
 void display(void) {
-    glClear(GL_COLOR_BUFFER_BIT); // Limpa o buffer
-    
-    glLoadIdentity(); // Reseta transformações
+    glClear(GL_COLOR_BUFFER_BIT); 
+    glLoadIdentity(); 
 
-    // Desenha a mesa
     desenhaMesa();
 
-    // Desenha todas as bolas
     for (const auto& bola : gBolas) {
         if (!bola.naMesa) continue;
-        
         glPushMatrix();
-        // 1. Translação: Move para a posição da bola
         glTranslatef(bola.pos.x, bola.pos.y, 0.0f);
-        
-        // 2. Desenha a bola na origem (0,0) do sistema transladado
         glColor3f(bola.r, bola.g, bola.b);
         desenhaCirculo(bola.raio, 30, GL_POLYGON);
-        
-        // (Opcional: desenha sombra)
-        glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
-        glTranslatef(-0.5f, -0.5f, -0.1f); // Desloca sombra
-        desenhaCirculo(bola.raio, 30, GL_POLYGON);
-
         glPopMatrix();
     }
     
-    // Desenha o taco
+    // Esta função agora desenha o taco para AMBOS, jogador e IA
     desenhaTaco();
     
     // Desenha UI (Pontuação e Status)
-    sprintf(gMensagemStatus, "Bolas Encacapadas: %d", gPontuacao);
-    desenhaTexto(gMensagemStatus, -MESA_LARGURA - 5, MESA_ALTURA + 5, 1, 1, 1);
+    float uiY = MESA_ALTURA + (MUNDO_BORDA / 2.0f);
+    char textoBuffer[100];
+    sprintf(textoBuffer, "Jogador: %d", gPontuacaoJogador);
+    desenhaTexto(textoBuffer, -MESA_LARGURA, uiY, 1, 1, 1);
     
-    if (!gBolasEmMovimento) {
-         desenhaTexto("Mire (mouse), puxe (clique) e solte para atirar.", -70, -MESA_ALTURA - 5, 1, 1, 1);
-    }
+    sprintf(textoBuffer, "Computador: %d", gPontuacaoIA);
+    desenhaTexto(textoBuffer, MESA_LARGURA - 30.0f, uiY, 1, 1, 1);
     
-    // Troca os buffers (Double Buffering)
+    // Exibe a mensagem de status atual (controlada pela função anima)
+    desenhaTexto(gMensagemStatus, -70, -MESA_ALTURA - (MUNDO_BORDA / 2.0f), 1, 1, 1);
+    
     glutSwapBuffers();
 }
 
@@ -447,24 +524,21 @@ void display(void) {
  * Callback de clique do mouse (Pressionar e Soltar).
  */
 void gerenciaMouse(int button, int state, int x_tela, int y_tela) {
+    if (gTurnoAtual != JOGADOR || gBolasEmMovimento) return;
+
     if (button == GLUT_LEFT_BUTTON) {
-        if (state == GLUT_DOWN && !gBolasEmMovimento) {
-            // Pressionou: Começa a mirar e puxar
+        if (state == GLUT_DOWN) {
             gEstaMirando = true;
             converteMouseParaUniverso(x_tela, y_tela, &gPosCliqueTaco);
-            gPosMouseSRU = gPosCliqueTaco; // Sincroniza
+            gPosMouseSRU = gPosCliqueTaco;
         } 
         else if (state == GLUT_UP && gEstaMirando) {
-            // Soltou: Dá a tacada!
             gEstaMirando = false;
-            if (gForcaTacada > 1.0f) { // Só atira se puxou o mínimo
-                // Calcula a direção da tacada (do taco para a bola)
+            if (gForcaTacada > 1.0f) { 
                 Vetor2D dirTacada = (gBolas[0].pos - gPosMouseSRU).normalizado();
-                
-                // Aplica a força à velocidade da bola branca
-                gBolas[0].vel = dirTacada * gForcaTacada * FATOR_FORCA_TACADA;
+                gBolas[0].vel = dirTacada * gForcaTacada * FATOR_FORCA_TACADA_JOGADOR;
                 gBolasEmMovimento = true;
-                sprintf(gMensagemStatus, "Jogando...");
+                sprintf(gMensagemStatus, "Jogador jogando...");
             }
             gForcaTacada = 0.0f;
         }
@@ -475,20 +549,17 @@ void gerenciaMouse(int button, int state, int x_tela, int y_tela) {
  * Callback de mouse se movendo sem clicar (Mira).
  */
 void mousePassivo(int x_tela, int y_tela) {
-    if (!gEstaMirando && !gBolasEmMovimento) {
-        converteMouseParaUniverso(x_tela, y_tela, &gPosMouseSRU);
-        gPosCliqueTaco = gPosMouseSRU; // O "puxar" começa de onde o mouse está
-    }
+    if (gTurnoAtual != JOGADOR || gBolasEmMovimento || gEstaMirando) return;
+    converteMouseParaUniverso(x_tela, y_tela, &gPosMouseSRU);
+    gPosCliqueTaco = gPosMouseSRU; 
 }
 
 /**
  * Callback de mouse se movendo clicado (Força).
  */
 void mouseArrastando(int x_tela, int y_tela) {
-    if (gEstaMirando) {
-        // Atualiza a posição do mouse (para o taco seguir)
-        converteMouseParaUniverso(x_tela, y_tela, &gPosMouseSRU);
-    }
+    if (gTurnoAtual != JOGADOR || !gEstaMirando) return;
+    converteMouseParaUniverso(x_tela, y_tela, &gPosMouseSRU);
 }
 
 /**
@@ -509,20 +580,19 @@ void gerenciaTeclado(unsigned char key, int x, int y) {
 void redimensiona(int w, int h) {
     gLarguraTela = w;
     gAlturaTela = h;
-    glViewport(0, 0, w, h); // Atualiza o viewport
+    glViewport(0, 0, w, h); 
     
-    // Atualiza a projeção (gluOrtho2D) para manter o SRU
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    // Define o SRU com uma "borda" para o taco e UI
-    float mundoX = MESA_LARGURA + 10;
-    float mundoY = MESA_ALTURA + 10;
     
-    // Mantém a proporção da mesa
-    if (w / (float)h > mundoX / mundoY) {
-        mundoX = mundoY * (w / (float)h);
-    } else {
-        mundoY = mundoX * (h / (float)w);
+    float mundoX = MESA_LARGURA + MUNDO_BORDA;
+    float mundoY = MESA_ALTURA + MUNDO_BORDA;
+    gProporcaoMundo = (float)w / (float)h / (mundoX / mundoY);
+
+    if (gProporcaoMundo > 1.0) { 
+        mundoX *= gProporcaoMundo;
+    } else { 
+        mundoY /= gProporcaoMundo;
     }
     
     gluOrtho2D(-mundoX, mundoX, -mundoY, mundoY);
@@ -534,11 +604,8 @@ void redimensiona(int w, int h) {
  * Função de inicialização do OpenGL.
  */
 void inicializa(void) {
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f); // Fundo cinza escuro
-    
-    // Habilita transparência (para a sombra da bola)
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f); 
+    srand(time(NULL));
     
     inicializaCacapas();
     arrumarBolas();
@@ -551,11 +618,10 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(gLarguraTela, gAlturaTela);
     glutInitWindowPosition(50, 50);
-    glutCreateWindow("Sinuca 2D - Trabalho de CG");
+    glutCreateWindow("Sinuca 2D vs. IA (com Animacao) - Trabalho de CG");
 
     inicializa();
     
-    // Registra todos os callbacks
     glutDisplayFunc(display);
     glutReshapeFunc(redimensiona);
     glutKeyboardFunc(gerenciaTeclado);
@@ -563,9 +629,8 @@ int main(int argc, char** argv) {
     glutPassiveMotionFunc(mousePassivo);
     glutMotionFunc(mouseArrastando);
     
-    // Inicia a animação (chama 'anima' pela primeira vez)
     glutTimerFunc(1000 / 60, anima, 0);
 
-    glutMainLoop(); // Inicia o loop principal do GLUT
+    glutMainLoop();
     return 0;
 }
